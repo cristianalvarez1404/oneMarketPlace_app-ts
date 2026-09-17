@@ -4,12 +4,14 @@ import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { countries } from "./countries";
 import styles from "./signup.module.css";
+import { useSignUp } from "@clerk/nextjs"
 
 interface SignupFormProps {
   role: "client" | "freelancer";
 }
 
 export function SignupForm({ role }: SignupFormProps) {
+  const { signUp } = useSignUp();
   const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState("");
   const isClient = role === "client";

@@ -1,27 +1,54 @@
-import express from "express"
-import cors from "cors"
-import { ApiResponse } from "./types/common.types";
-import { API_PREFIX } from "./config/constants";
-import { apiRouter } from "./routes";
-import { errorHandler } from "./middleware/error.middleware";
-import { notFoundHandler } from "./middleware/no-found.middleware";
+import { Server } from "node:http";
+import { SERVICE_NAME } from "./config/constants";
+import { app } from "./app";
+import { env } from "./config/env";
 
-export const app = express();
+let server: Server | undefined;
+let isShuttingDown = false;
 
-app.disable("x-powered-by");
-app.use(express.json({limit: "2mb"}));
-app.use(cors())
-app.use(express.urlencoded({extended: true}))
+const start = async ():Promise<void> => {
+  server = app.listen(env.port, () => {
+    console.log(`${SERVICE_NAME} listining on http://localhost:${env.port} in ${env.nodeEnv} mode`)
+  });
+}
 
-app.get("/", (_request, response) => {
-  const body: ApiResponse<never> = {
-    success: true,
-    message: "OneMarketplace.io API is running."
+const closeHttpServer = async ():Promise<void> => {
+  if(!server){
+    return;
   }
 
-  response.status(200).json(body);
-});
+  await new Promise<void>((resolve, reject) => {
+    server?.close((error) => {
+      if(error){
+        reject(error);
+        reject;
+      }
+      resolve();
+    })
+  })
+}
 
-app.use(API_PREFIX, apiRouter);
-app.use(notFoundHandler);
-app.use(errorHandler);
+const shutdown = async (signal: NodeJS.Signals):Promise<void> => {
+  if(isShuttingDown){
+    return;
+  }
+
+  isShuttingDown = true;
+  console.log(`${signal} received. Closing services.`)
+
+  try {
+    await closeHttpServer();
+    process.exit(0);
+  } catch(error){
+    console.error("Failed to shut down cleanly.", error);
+    process.exit(1);
+  }
+}
+
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+
+void start().catch(async (error) => {
+  console.error(`Failed to start ${SERVICE_NAME}.`, error);
+  process.exit(1);
+})
