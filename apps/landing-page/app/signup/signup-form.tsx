@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { SubmitEvent, useState } from "react";
 import { countries } from "./countries";
 import styles from "./signup.module.css";
 import { useSignUp } from "@clerk/nextjs"
@@ -218,7 +218,62 @@ export function SignupForm({ role }: SignupFormProps) {
           <h1 className={`${styles.formTitle} mt-4 text-[#171916]`}>
             Check your inbox
           </h1>
+          <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#72766f]">
+            Enter the six-digit code sent to {" "}
+            <span className="font-semibold text-[#30332f]">{pendingEmail}</span>
+            .
+          </p>
         </div>
+
+        <form onSubmit={handleVerification}
+          className="mt-8 space-y-5"
+        >
+          <label className="grid gap-2 text-sm font-semibold text-[#30332f]">
+            Verification code
+            <input
+              value={verificationCode}
+              onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, ""))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              minLength={6}
+              maxLength={6}
+              required
+              autoFocus
+              className="h-12 rounded-xl border border-black/13 bg-white px-4 text-center font-mono text-lg tracking-[0.35em] outline-none transition placeholder:text-[#a2a59f] focus:border-[#5d8b59] focus:ring-3 focus:ring-[#dcebd9]"
+              placeholder="000000"
+            />
+          </label>
+
+          <button 
+            type="submit"
+            disabled={isLoading || verificationCode.length !== 6}
+            className="h-12 w-full cursor-pointer rounded-xl bg-[#252724] text-sm font-semibold text-white shadow-sm transition hover:bg-[#3b3e390] disabled:cursor-not-allowed disabled:opacity-50"  
+          >
+            {isLoading ? "Verifing..." : "Verify and continue"}
+          </button>
+
+          <button 
+            type="button"
+            onClick={() => void resendVerificationCode()}
+            disabled={isLoading}
+            className="h-12 w-full cursor-pointer text-center text-sm font-semibold text-[#497446] disabled:opacity-50"  
+          >
+            Send a new code
+          </button>
+
+          {status && (
+            <p
+              className={`rounded-xl px-4 py-3 text-center text-xs font-medium ${
+                isError
+                  ? "bg-[#fff0ee] text-[#9a4d45]"
+                  : "bg-[#edf5eb] text-[#4e704b]"
+              }`}
+              role={isError ? "alert" : "status"}
+            >
+              {status}
+            </p>
+          )}
+        </form>
       </div>
     )
   }
