@@ -2,11 +2,14 @@ import { Server } from "node:http";
 import { SERVICE_NAME } from "./config/constants";
 import { app } from "./app";
 import { env } from "./config/env";
+import { connectRedis, disconnectRedis } from "./config/redis";
 
 let server: Server | undefined;
 let isShuttingDown = false;
 
 const start = async ():Promise<void> => {
+  await connectRedis();
+
   server = app.listen(env.port, () => {
     console.log(`${SERVICE_NAME} listining on http://localhost:${env.port} in ${env.nodeEnv} mode`)
   });
@@ -38,6 +41,7 @@ const shutdown = async (signal: NodeJS.Signals):Promise<void> => {
 
   try {
     await closeHttpServer();
+    await disconnectRedis();
     process.exit(0);
   } catch(error){
     console.error("Failed to shut down cleanly.", error);
@@ -50,5 +54,6 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 void start().catch(async (error) => {
   console.error(`Failed to start ${SERVICE_NAME}.`, error);
+  await disconnectRedis().catch(() => undefined);
   process.exit(1);
 })
