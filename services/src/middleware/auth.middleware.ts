@@ -1,3 +1,13 @@
+import {RequestHandler} from "express";
+import {asyncHandler} from "../utils/async-handler.js";
+import {ApiError} from "../utils/api-error.js";
+import {verifyToken} from "@clerk/backend";
+import { env } from "process";
+import { ACCOUNT_AUTH_CACHE_TTL_SECONDS, getAccountAuthCacheKey } from "../config/constants.js";
+import { redis } from "../config/redis.js"
+import { db } from "../database/client.js";
+import { accounts } from "../database/schema.js";
+import { and, eq } from "drizzle-orm";
 
 const accountRoles = ['client', 'freelancer'] as const;
 type AccountRole = (typeof accountRoles)[number];
@@ -18,10 +28,77 @@ const getBearerToken = (authorizationHeader: string | undefined) => {
 
   const token = authorizationHeader?.slice("Bearer ".length).trim();
   return token || null;
-}
+};
+
+const isAccountAvailable = async (
+  requestedRole: "client" | "freelancer",
+  userId: string
+): Promise<CachedAccountAuth> => {
+  const cacheKey = getAccountAuthCacheKey(userId, requestedRole);
+  const cachedValue = await redis.get(cacheKey);
+
+  if(cachedValue){
+    await redis.expire(cacheKey, ACCOUNT_AUTH_CACHE_TTL_SECONDS);
+    return JSON.parse(cachedValue) as CachedAccountAuth;
+  }
+
+  const databaseRole = requestedRole === "client" ? "CLIENT" : "FREELANCER";
+
+  const [account] = await db
+    .select({isOnboardingComplete: accounts.isOnboardingComplete})
+    .from(accounts)
+    .where(and(eq(accounts.auth_id, userId), eq(accounts.role, databaseRole)))
+    .limit(1);
+
+    const accountAuth: CachedAccountAuth = {
+      userId,
+      accountExists: Boolean(account),
+      role: requestedRole,
+      isOnboarded: account?.isOnboardingComplete === true
+    };
+
+    await redis.setEx(
+      cacheKey,
+      ACCOUNT_AUTH_CACHE_TTL_SECONDS,
+      JSON.stringify(accountAuth)
+    );
+    
+
+};
 
 export const isAuthenticated: RequestHandler = asyncHandler(
-  async(request, _response, next){
+  async(request, _response, next) => {
+    const token = getBearerToken(request?.header.authorization);
+    const requestedRole = request.body?.role ?? request?.query.role;
+
+    if(!token){
+      throw new ApiError(401, "Please do login to access this API!");
+    }
+
+    if(!isAccountRole(requestedRole)){
+      throw new ApiError(400, "A valid account role is required.");
+    }
+
+    let claims: Awaited<ReturnType<typeof verifyToken>>;
     
+    try {
+      claims = await verifyToken(token, {
+        secretKey: env.clerkSecretKey
+      });
+    } catch(error){
+      throw new ApiError(401, "Authentication token is invalid or expired.");
+    }
+
+    const accountAuth = await isAccountAvailable(requestedRole, claims.sub);
+
+    request.auth = {
+      userId: claims.sub,
+      sessionId: typeof claims.sid === "string" ? claims.sid : undefined,
+      role: requestedRole,
+      accountExists: accountAuth.accountExists,
+      isOnboarded: accountAuth.isOnboarded
+    };
+
+    next();
   }
-) 
+);
